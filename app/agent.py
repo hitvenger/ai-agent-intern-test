@@ -398,9 +398,10 @@ class SupportAgent:
         # Check for Historical / Legacy Policy Inquiries
         legacy_chunks = [c for c in chunks if "02-returns-policy-legacy" in c.file_name]
         if legacy_chunks:
+            legacy_content = re.sub(r"^#+\s+[^\n]+\n*", "", legacy_chunks[0].content).strip()
             answer = (
-                "Under our previous/legacy Returns Policy (RET-2024-01), customers had **60 calendar days of delivery** "
-                "to request a return. Please note that this legacy policy was superseded on April 1, 2026 by our "
+                f"Under our previous/legacy Returns Policy (RET-2024-01), {legacy_content} "
+                "Please note that this legacy policy was superseded on April 1, 2026 by our "
                 "current Returns Policy (RET-2026-01), which provides a **30-calendar-day return window** for standard-plan customers."
             )
             sources = [
@@ -408,6 +409,7 @@ class SupportAgent:
                 "01-returns-policy-current.md#Standard return window"
             ]
             return answer, sources, False, None
+
 
         # Check if query is about final-sale damaged / defective exceptions
         final_sale_chunks = [c for c in chunks if "03-final-sale" in c.file_name or "04-damaged" in c.file_name]
@@ -430,10 +432,11 @@ class SupportAgent:
                 answer = (
                     "Under our current Returns Policy (Item condition), returned items must be unused, unwashed, "
                     "and in resalable condition with original tags and packaging. Trying an item indoors for fit does not "
-                    "by itself make it ineligible, but visible wear, odors, stains, alterations, or missing tags will cause the return to be rejected."
+                    "by itself make it ineligible, but visible wear, odors, stains, alterations, or missing components may cause the return to be rejected."
                 )
                 sources = ["01-returns-policy-current.md#Item condition"]
                 return answer, sources, False, None
+
 
             if "washed" in q or ("wash" in q and "not" not in q and "didn" not in q):
                 answer = (

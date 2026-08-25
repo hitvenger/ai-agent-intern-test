@@ -155,3 +155,27 @@ def test_dynamic_chunk_content_propagation():
     assert handoff is False
 
 
+def test_historical_legacy_policy_retrieval_and_synthesis():
+    """
+    Regression Test: Proves that historical queries retrieve the superseded legacy policy,
+    ground on the accurate 45-day window from 02-returns-policy-legacy.md, and explain
+    that it was superseded by the current 30-day policy.
+    """
+    from app.agent import SupportAgent
+    agent = SupportAgent()
+
+    resp = agent.process_message("What did the old return policy say about the return window?")
+
+    # Must accurately contain 45 calendar days from 02-returns-policy-legacy.md
+    assert "45 calendar days" in resp.answer
+    # Must NOT contain erroneous 60 calendar days
+    assert "60 calendar days" not in resp.answer
+    # Must explain that it was superseded by the current 30-day policy
+    assert "superseded" in resp.answer.lower()
+    assert "30-calendar-day" in resp.answer or "30 calendar days" in resp.answer
+    # Must cite the legacy return window source
+    assert "02-returns-policy-legacy.md#Return window" in resp.sources
+    assert resp.handoff_recommended is False
+
+
+
