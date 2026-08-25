@@ -94,7 +94,9 @@ class PolicyEngine:
         2. Conflict detection
         3. Citation and handoff aggregation
         """
-        authoritative_chunks = self.filter_authoritative_chunks(retrieved_chunks)
+        query_lower = query.lower()
+        is_historical = any(w in query_lower for w in ["old return policy", "old policy", "legacy policy", "previous policy", "previous return", "what did the old", "what was the old", "under the old", "under the previous"])
+        authoritative_chunks = self.filter_authoritative_chunks(retrieved_chunks, historical_query=is_historical)
         
         conflict_detected, conflict_desc, final_chunks = self.detect_conflicts(authoritative_chunks, query)
         

@@ -1,9 +1,21 @@
 from __future__ import annotations
 
+import os
 import re
+import warnings
 from pathlib import Path
 from typing import List, Optional, Union
 import numpy as np
+
+# Cleanly suppress transformers and tokenizers loading logs
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+warnings.filterwarnings("ignore")
+try:
+    import transformers
+    transformers.logging.set_verbosity_error()
+except ImportError:
+    pass
 
 from app.models import PolicyChunk
 from app.rag.loader import KnowledgeBaseLoader
@@ -16,7 +28,9 @@ RETURN_SYNONYMS = [
     "ship it back", "ship back", "shipping back",
     "take it back", "take back",
     "give it back", "give back",
-    "exchange", "refund"
+    "exchange", "refund",
+    "change of mind", "changed my mind", "change my mind",
+    "dont want", "don't want", "not keeping", "keep it"
 ]
 
 CANADIAN_LOCATIONS = [
@@ -55,6 +69,7 @@ class KnowledgeBaseRetriever:
             except Exception:
                 self._embedder = False
         return self._embedder
+
 
     def _build_index(self) -> None:
         """Loads chunks and pre-computes dense embeddings."""
@@ -98,6 +113,7 @@ class KnowledgeBaseRetriever:
         has_return_intent = global_has_return or any(syn in query_lower for syn in RETURN_SYNONYMS)
         is_canada_query = global_is_canada or any(loc in query_lower for loc in CANADIAN_LOCATIONS)
         is_customs_query = any(w in query_lower for w in ["custom", "customs", "duty", "duties", "tax", "taxes", "fee", "fees"])
+        is_historical = any(w in query_lower for w in ["old return policy", "old policy", "legacy policy", "previous policy", "previous return", "what did the old", "what was the old", "under the old", "under the previous"])
 
         for idx, chunk in enumerate(self.chunks):
             chunk_text = f"{chunk.file_name} {chunk.heading} {chunk.content}".lower()
@@ -113,10 +129,17 @@ class KnowledgeBaseRetriever:
 
             # Deterministic domain & synonym boosts
             if has_return_intent:
-                if "01-returns-policy-current" in chunk.file_name:
-                    lex_score += 6.0
+                if is_historical and "02-returns-policy-legacy" in chunk.file_name:
+                    lex_score += 10.0
+                elif "01-returns-policy-current" in chunk.file_name:
+                    lex_score += 7.0
+                    if any(w in query_lower for w in ["window", "how long", "time", "days", "changed my mind", "change of mind", "deadline"]) and "standard" in chunk.heading.lower():
+                        lex_score += 5.0
+                    if any(w in query_lower for w in ["wash", "washed", "wear", "wore", "condition", "tag", "tags"]) and "condition" in chunk.heading.lower():
+                        lex_score += 5.0
+
                 if "trailplus" in query_lower and "09-trailplus" in chunk.file_name:
-                    lex_score += 6.0
+                    lex_score += 8.0
 
             if is_canada_query and "06-international-shipping" in chunk.file_name:
                 lex_score += 5.0
@@ -139,7 +162,7 @@ class KnowledgeBaseRetriever:
             if "warranty" in query_lower and "07-warranty" in chunk.file_name:
                 lex_score += 5.0
 
-            if "final sale" in query_lower or "final-sale" in query_lower:
+            if ("final sale" in query_lower or "final-sale" in query_lower) and not ("what's the window" in query_lower or "how long" in query_lower and "broken" not in query_lower and "damage" not in query_lower):
                 if "03-final-sale" in chunk.file_name or "04-damaged" in chunk.file_name:
                     lex_score += 4.0
 
@@ -150,6 +173,7 @@ class KnowledgeBaseRetriever:
                         lex_score += 4.0
                 if "03-final-sale" in chunk.file_name:
                     lex_score += 5.0
+
 
 
             lexical_scores[idx] = lex_score
