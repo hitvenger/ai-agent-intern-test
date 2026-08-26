@@ -14,8 +14,9 @@ A deterministic, reliable, and privacy-preserving RAG Customer Support Agent for
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/anantgarg/ai-agent-intern-test.git
-cd aster-row-support-agent
+git clone https://github.com/hitvenger/ai-agent-intern-test.git
+cd ai-agent-intern-test
+
 
 # 2. Create and activate a virtual environment
 python -m venv venv
@@ -224,11 +225,22 @@ During development and iterative evaluation, three distinct failure modes were d
 
 ---
 
-## 8. Demo Interfaces
+## 8. Demo Walkthrough & Interfaces
+
+### Demo Video & Animated Walkthrough
+
+A recorded walkthrough demonstrating return policy grounding, PII-sanitized order tracking (`ORD-1007`), the Breeze Tumbler conflict detection & human handoff alert, and multi-turn international shipping resolution:
+
+![Aster & Row Support Agent Demo Walkthrough](demo/aster-row-demo.gif)
+
+
+
+---
 
 ### Interactive Demo Frontend (Web UI)
 
-A lightweight presentation frontend is included for visual demonstration and video recording:
+A lightweight presentation frontend is included for visual demonstration and interactive testing:
+
 
 ```bash
 # 1. Start the FastAPI backend server
