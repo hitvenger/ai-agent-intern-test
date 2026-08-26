@@ -82,7 +82,7 @@ Run the deterministic evaluation harness covering all 15 supplied visible cases 
 # Run the complete Evaluation Harness with Rich summary tables
 python evaluation/run_eval.py
 
-# Run all automated unit, integration, and adversarial tests (60 tests)
+# Run all automated unit, integration, and adversarial tests (61 tests)
 python -m pytest tests/ -v
 
 
@@ -224,20 +224,39 @@ During development and iterative evaluation, three distinct failure modes were d
 
 ---
 
-## 8. Demo
+## 8. Demo Interfaces
 
-The repository includes an interactive CLI demonstration with optional execution trace logging.
+### Interactive Demo Frontend (Web UI)
 
-Run:
+A lightweight presentation frontend is included for visual demonstration and video recording:
+
+```bash
+# 1. Start the FastAPI backend server
+uvicorn app.api.server:app --reload
+```
+
+Then open your browser to:
+- **Web UI:** [`http://127.0.0.1:8000`](http://127.0.0.1:8000) (or open `frontend/index.html` directly)
+- **Interactive OpenAPI Docs:** [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs)
+
+*Note: This is a lightweight evaluation/presentation frontend for local demo purposes.*
+
+---
+
+### Interactive CLI Demo
+
+Run the terminal-based interactive chat interface with real-time structured execution tracing:
+
 ```bash
 python -m app.cli --debug
 ```
 
-The demo covers:
+The demo demonstrates:
 1. **Knowledge-Base Policy Inquiries:** Exact source citations in `[filename#heading]` format.
 2. **Air-Gapped Order Status:** PII stripped and stale tracking/ETA neutralized on cancelled/returned orders.
 3. **Multi-Turn Context Retention:** Carrying context across conversation turns (e.g. Canadian shipping follow-ups, order lookup status).
 4. **Safe Abstention & Active Conflict Handling:** Explaining discrepancies with safe interim guidance and human handoff on the Breeze Tumbler care conflict.
-5. **Deterministic Evaluation:** Full test coverage across all 22 evaluation cases and 60 automated Pytest test cases.
+5. **Deterministic Evaluation:** Full test coverage across all 22 evaluation cases (15 visible + 7 custom) and 61 automated Pytest test cases.
+
 
 

@@ -9,17 +9,41 @@ def agent():
 
 def test_canada_multiturn_flow(agent):
     session_id = "multi_turn_canada"
-    # Turn 1
+    # Turn 1: General international shipping question
     res1 = agent.process_message("Do you ship internationally?", session_id=session_id)
-    assert "06-international-shipping.md" in " ".join(res1.sources)
+    ans1_lower = res1.answer.lower()
+    assert "canada" in ans1_lower
+    # Must NOT prematurely dump timing/duties on Turn 1
+    assert "5–9" not in res1.answer and "5-9" not in res1.answer
+    assert "duty" not in ans1_lower and "duties" not in ans1_lower
+    assert "06-international-shipping.md#Supported destinations" in res1.sources
 
-    # Turn 2
+    # Turn 2: Specific follow-up on Canada delivery estimate and customs
     res2 = agent.process_message("What about Canada, and how long does it take?", session_id=session_id)
     ans2_lower = res2.answer.lower()
     assert "canada" in ans2_lower
     assert "5–9 business days" in ans2_lower or "5-9 business days" in ans2_lower or "5–9" in ans2_lower
+    assert "duties" in ans2_lower or "taxes" in ans2_lower or "brokerage" in ans2_lower
+    assert "06-international-shipping.md#Canada delivery estimate" in res2.sources
+    assert "06-international-shipping.md#Duties and taxes" in res2.sources
+
+
+def test_canada_multiturn_short_followup(agent):
+    session_id = "multi_turn_canada_short"
+    # Turn 1
+    res1 = agent.process_message("Do you ship internationally?", session_id=session_id)
+    assert "06-international-shipping.md#Supported destinations" in res1.sources
+    assert "5–9" not in res1.answer and "5-9" not in res1.answer
+
+    # Turn 2: Short follow-up "What about Canada?"
+    res2 = agent.process_message("What about Canada?", session_id=session_id)
+    ans2_lower = res2.answer.lower()
+    assert "canada" in ans2_lower
+    assert "5–9 business days" in ans2_lower or "5-9 business days" in ans2_lower or "5–9" in ans2_lower
     assert "duties" in ans2_lower or "taxes" in ans2_lower
-    assert "06-international-shipping.md" in " ".join(res2.sources)
+    assert "06-international-shipping.md#Canada delivery estimate" in res2.sources
+    assert "06-international-shipping.md#Duties and taxes" in res2.sources
+
 
 
 def test_order_id_context_preservation(agent):

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aster &amp; Row — AI Customer Support</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="chat-app-wrapper">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-avatar">AR</div>
+        <div class="brand-text">
+          <div class="brand-title">Aster &amp; Row</div>
+          <div class="brand-subtitle">AI Customer Support</div>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="agent-status">
+          <span class="status-pulse-dot"></span>
+          <span class="status-text">Agent Online</span>
+        </div>
+        <button id="debugToggleBtn" class="header-btn debug-btn" type="button" title="Toggle execution trace panel">
+          <span id="debugBtnText">Debug: Off</span>
+        </button>
+        <button id="newChatBtn" class="header-btn" type="button" title="Start a fresh conversation">
+          New Chat
+        </button>
+      </div>
+    </header>
+
+    <!-- Error Banner -->
+    <div id="errorBanner" class="error-banner" style="display: none;">
+      <span class="error-icon">⚠️</span>
+      <span id="errorMessage" class="error-text">Unable to reach the support agent. Make sure the FastAPI server is running.</span>
+      <button id="errorCloseBtn" class="error-close-btn" type="button">&times;</button>
+    </div>
+
+    <!-- Main Chat Window -->
+    <main id="chatMain" class="chat-conversation-area">
+      <!-- Welcome State -->
+      <div id="welcomeState" class="welcome-container">
+        <div class="welcome-badge">Support Assistant</div>
+        <h1 class="welcome-title">How can we help you today?</h1>
+        <p class="welcome-subtitle">Ask about returns, shipping, orders, warranties, or product care.</p>
+        
+        <div class="welcome-examples-grid">
+          <button class="example-card" type="button" data-prompt="How long can I return an unused backpack?">
+            <span class="example-category">Return Policy</span>
+            <span class="example-query">"How long can I return an unused backpack?"</span>
+          </button>
+          <button class="example-card" type="button" data-prompt="Where is ORD-1007?">
+            <span class="example-category">Order Tracking</span>
+            <span class="example-query">"Where is ORD-1007?"</span>
+          </button>
+          <button class="example-card" type="button" data-prompt="Can I put the Breeze Tumbler in the dishwasher?">
+            <span class="example-category">Conflict &amp; Handoff</span>
+            <span class="example-query">"Can I put the Breeze Tumbler in the dishwasher?"</span>
+          </button>
+          <button class="example-card" type="button" data-prompt="Do you ship internationally?">
+            <span class="example-category">International Shipping</span>
+            <span class="example-query">"Do you ship internationally?"</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Messages Stream -->
+      <div id="messagesStream" class="messages-stream"></div>
+
+      <!-- Typing Indicator -->
+      <div id="typingIndicator" class="typing-row" style="display: none;">
+        <div class="msg-sender-tag">Aster &amp; Row</div>
+        <div class="typing-box">
+          <span class="typing-text">Thinking</span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+          <span class="typing-dot"></span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Bottom Action & Input Area -->
+    <footer class="app-footer">
+      <!-- Quick example chips -->
+      <div class="quick-examples-bar">
+        <span class="quick-label">Try an example:</span>
+        <div class="quick-chips">
+          <button class="quick-chip" type="button" data-prompt="How long can I return an unused backpack?">Return policy</button>
+          <button class="quick-chip" type="button" data-prompt="Where is ORD-1007?">ORD-1007</button>
+          <button class="quick-chip" type="button" data-prompt="Can I put the Breeze Tumbler in the dishwasher?">Breeze conflict</button>
+          <button class="quick-chip" type="button" data-prompt="Do you ship internationally?">Intl shipping</button>
+          <button class="quick-chip" type="button" data-prompt="What about Canada?">Canada (Turn 2)</button>
+        </div>
+
+      </div>
+
+      <!-- Form Input -->
+      <form id="chatForm" class="input-form-container">
+        <textarea
+          id="messageInput"
+          class="chat-textarea"
+          placeholder="Ask Aster &amp; Row..."
+          rows="1"
+          autocomplete="off"
+        ></textarea>
+        <button id="sendBtn" class="send-btn" type="submit" title="Send message">
+          <span>Send</span>
+          <span class="send-arrow">&rarr;</span>
+        </button>
+      </form>
+
+      <div class="footer-meta">
+        <span class="meta-hint">Enter to send &middot; Shift+Enter for newline</span>
+        <span id="sessionDisplay" class="meta-session">Session: initializing...</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

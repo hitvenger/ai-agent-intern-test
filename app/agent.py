@@ -293,8 +293,17 @@ class SupportAgent:
         if retrieval.conflict_detected:
             care_chunk = next((c for c in retrieval.chunks if "11-product-care" in c.file_name), None)
             card_chunk = next((c for c in retrieval.chunks if "12-breeze-tumbler" in c.file_name), None)
-            care_text = care_chunk.content if care_chunk else "The stainless-steel body must be hand-washed, and only the lid is safe for the top rack of a dishwasher."
-            card_text = card_chunk.content if card_chunk else "All components are dishwasher safe."
+            care_raw = care_chunk.content if care_chunk else "The stainless-steel body must be hand-washed, and only the lid is safe for the top rack of a dishwasher."
+            care_text = re.sub(r"^#+\s+[^\n]+\n*", "", care_raw).strip()
+            # Lowercase initial letter if beginning with 'The ' so sentence reads naturally after comma
+            if care_text.startswith("The "):
+                care_text = "the " + care_text[4:]
+
+            card_raw = card_chunk.content if card_chunk else "All components are dishwasher safe."
+            card_text = re.sub(r"^#+\s+[^\n]+\n*", "", card_raw).strip()
+            if card_text.startswith("The "):
+                card_text = "the " + card_text[4:]
+
             care_file = care_chunk.file_name if care_chunk else "11-product-care.md"
             card_file = card_chunk.file_name if card_chunk else "12-breeze-tumbler-product-card.md"
             
@@ -305,6 +314,7 @@ class SupportAgent:
                 "To prevent potential damage to your tumbler finish, we recommend hand-washing the body as a safe interim measure. "
                 "I am escalating this discrepancy to our support team for human confirmation."
             )
+
             sources = [c.citation for c in [care_chunk, card_chunk] if c and c.citation]
             session.add_assistant_response(answer, sources=sources, handoff=True)
             trace = self.tracer.create_trace(
@@ -499,9 +509,10 @@ class SupportAgent:
             canadian_locs = ["canada", "montreal", "toronto", "vancouver", "calgary", "ottawa", "quebec", "edmonton", "winnipeg", "ontario", "alberta"]
             is_canada_q = any(loc in q for loc in canadian_locs)
             is_unsupported_dest = any(c in q for c in ["germany", "europe", "uk", "australia", "france", "asia"])
+            dest_chunk = next((c for c in intl_chunks if "destination" in c.heading.lower() or "supported" in c.heading.lower()), intl_chunks[0])
             
+            # 1. Unsupported international destinations (e.g. Germany)
             if is_unsupported_dest and not is_canada_q:
-                dest_chunk = next((c for c in intl_chunks if "destinations" in c.heading.lower()), intl_chunks[0])
                 answer = (
                     "Aster & Row currently ships internationally only to **Canada**. "
                     "Shipping to Germany and other international destinations outside Canada is not available at this time."
@@ -509,17 +520,35 @@ class SupportAgent:
                 sources = [dest_chunk.citation]
                 return answer, sources, False, None
 
-            if is_canada_q or "international" in q or any(term in q for term in ["duty", "duties", "tax", "taxes", "custom", "fee", "how long", "time", "ship"]):
+            # 2. Specific Canada delivery / timing / duties inquiry or follow-up
+            asks_timing_or_duties = any(term in q for term in [
+                "how long", "how many days", "delivery time", "transit", "timing", "time",
+                "duty", "duties", "tax", "taxes", "custom", "customs", "fee", "fees", "brokerage", "arrive", "cost"
+            ])
+            
+            if is_canada_q or asks_timing_or_duties:
+                est_chunk = next((c for c in intl_chunks if "estimate" in c.heading.lower()), None)
+                duties_chunk = next((c for c in intl_chunks if "duties" in c.heading.lower() or "tax" in c.heading.lower()), None)
                 answer = (
                     "Yes, shipping to Canada is supported. Canadian orders generally arrive within "
                     "**5–9 business days after dispatch** (processing time before dispatch is usually 1–2 business days). "
                     "Please note that import duties, taxes, and brokerage charges are not prepaid by Aster & Row and remain the responsibility of the recipient."
                 )
                 sources = [
-                    "06-international-shipping.md#Canada delivery estimate",
-                    "06-international-shipping.md#Duties and taxes"
+                    est_chunk.citation if est_chunk else "06-international-shipping.md#Canada delivery estimate",
+                    duties_chunk.citation if duties_chunk else "06-international-shipping.md#Duties and taxes"
                 ]
                 return answer, sources, False, None
+
+            # 3. General international shipping inquiry (e.g. "Do you ship internationally?")
+            # Answers using the supported destinations evidence without unnecessarily dumping timing/duties
+            answer = (
+                "Aster & Row currently ships internationally only to **Canada**. "
+                "Shipping to other international countries is not available at this time."
+            )
+            sources = [dest_chunk.citation]
+            return answer, sources, False, None
+
 
 
         # Check for Warranty inquiry
