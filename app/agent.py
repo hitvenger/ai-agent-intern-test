@@ -398,193 +398,185 @@ class SupportAgent:
         """
         q = query.lower()
         
-        # Check for dynamic mock chunk injection (regression test support)
-        if any("test-rag-marker" in c.content.lower() or "custom" in c.metadata.title.lower() for c in chunks):
-            top_chunk = chunks[0]
-            answer = f"According to our Returns Policy:\n\n• {top_chunk.content}"
-            sources = [top_chunk.citation]
+    def _clean_chunk_content(self, content: str) -> str:
+        """Strips leading markdown heading lines and extra whitespace from chunk content."""
+        if not content:
+            return ""
+        cleaned = re.sub(r"^#+\s+[^\n]+\n*", "", content.strip()).strip()
+        # Standardize hyphenated compound day adjectives (e.g. 45-calendar-day -> 45 calendar days)
+        cleaned = re.sub(r"(\d+)-calendar-day\b", r"\1 calendar days", cleaned)
+        return cleaned
+
+    def _synthesize_policy_answer(
+        self,
+        query: str,
+        chunks: List[PolicyChunk]
+    ) -> Tuple[str, List[str], bool, Optional[str]]:
+        """
+        Dynamically synthesizes policy answers grounded on the retrieved authoritative
+        PolicyChunk objects. Factual content is extracted from chunk.content and citations
+        are constructed from chunk.citation.
+        """
+        q = query.lower()
+
+        # 1. Historical / Legacy Policy Inquiries (RET-2024-01)
+        legacy_chunk = next((c for c in chunks if "02-returns-policy-legacy" in c.file_name), None)
+        if legacy_chunk is not None:
+            current_chunk = next((c for c in chunks if "01-returns-policy-current" in c.file_name), None)
+            used_chunks = [c for c in [legacy_chunk, current_chunk] if c]
+            legacy_text = self._clean_chunk_content(legacy_chunk.content)
+            answer = f"Under our previous/legacy Returns Policy ({legacy_chunk.metadata.document_id}):\n\n• {legacy_text}"
+            if current_chunk is not None:
+                current_text = self._clean_chunk_content(current_chunk.content)
+                answer += f"\n\nPlease note that this legacy policy was superseded on April 1, 2026 by our current Returns Policy ({current_chunk.metadata.document_id}):\n\n• {current_text}"
+            sources = [c.citation for c in used_chunks]
             return answer, sources, False, None
 
-        # Check for Historical / Legacy Policy Inquiries
-        legacy_chunks = [c for c in chunks if "02-returns-policy-legacy" in c.file_name]
-        if legacy_chunks:
-            legacy_content = re.sub(r"^#+\s+[^\n]+\n*", "", legacy_chunks[0].content).strip()
-            answer = (
-                f"Under our previous/legacy Returns Policy (RET-2024-01), {legacy_content} "
-                "Please note that this legacy policy was superseded on April 1, 2026 by our "
-                "current Returns Policy (RET-2026-01), which provides a **30-calendar-day return window** for standard-plan customers."
-            )
-            sources = [
-                "02-returns-policy-legacy.md#Return window",
-                "01-returns-policy-current.md#Standard return window"
-            ]
-            return answer, sources, False, None
-
-
-        # Check if query is about final-sale damaged / defective exceptions
+        # 2. Final-Sale Damaged / Defective Exceptions
         final_sale_chunks = [c for c in chunks if "03-final-sale" in c.file_name or "04-damaged" in c.file_name]
         if ("final" in q and "sale" in q) and ("damage" in q or "broken" in q or "defect" in q or "zipper" in q or "luck" in q):
+            fs_chunk = next((c for c in chunks if "03-final-sale" in c.file_name and "damage" in c.heading.lower()), None) or next((c for c in chunks if "03-final-sale" in c.file_name), None)
+            dmg_chunk = next((c for c in chunks if "04-damaged" in c.file_name and ("reporting" in c.heading.lower() or "window" in c.heading.lower())), None) or next((c for c in chunks if "04-damaged" in c.file_name), None)
+            used_chunks = [c for c in [fs_chunk, dmg_chunk] if c]
+            sections = "\n\n".join([f"• {self._clean_chunk_content(c.content)}" for c in used_chunks])
             answer = (
-                "Although final-sale items cannot be returned for a change of mind, the final-sale restriction "
-                "does not block assistance if your item arrived damaged, defective, or incorrect. "
-                "Issues must be reported within **7 calendar days of delivery** with your order ID, description, and photographs. "
+                "Although final-sale items cannot be returned for a change of mind, final-sale restrictions do not block assistance for damaged or defective items:\n\n"
+                f"{sections}\n\n"
                 "A human support specialist will review your request for a replacement or refund."
             )
-            sources = [
-                "03-final-sale-and-promotions.md#Damaged or incorrect items",
-                "04-damaged-or-wrong-items.md#Reporting window"
-            ]
+            sources = [c.citation for c in used_chunks]
             return answer, sources, True, "Final-sale damage reports require human support review"
 
-        # Check for Item Condition Inquiries (washed, worn indoors, tags)
-        if any("01-returns-policy-current" in c.file_name for c in chunks):
-            if "didn't wash" in q or "did not wash" in q or "wore" in q or "worn" in q or "wear" in q or "fit" in q:
-                answer = (
-                    "Under our current Returns Policy (Item condition), returned items must be unused, unwashed, "
-                    "and in resalable condition with original tags and packaging. Trying an item indoors for fit does not "
-                    "by itself make it ineligible, but visible wear, odors, stains, alterations, or missing components may cause the return to be rejected."
-                )
-                sources = ["01-returns-policy-current.md#Item condition"]
+        # 3. Item Condition Inquiries (washed, worn indoors, tags, past deadline)
+        return_chunks = [c for c in chunks if "01-returns-policy-current" in c.file_name]
+        if return_chunks:
+            cond_chunk = next((c for c in return_chunks if "condition" in c.heading.lower()), None)
+            win_chunk = next((c for c in return_chunks if "standard" in c.heading.lower() or "window" in c.heading.lower()), return_chunks[0])
+            fee_chunk = next((c for c in return_chunks if "fee" in c.heading.lower() or "refund" in c.heading.lower()), None)
+
+            # Specific wear / fit / washing inquiry
+            if ("didn't wash" in q or "did not wash" in q or "wore" in q or "worn" in q or "wear" in q or "fit" in q) and cond_chunk:
+                used_chunks = [cond_chunk]
+                answer = f"Under our current Returns Policy (Item condition):\n\n• {self._clean_chunk_content(cond_chunk.content)}"
+                sources = [c.citation for c in used_chunks]
                 return answer, sources, False, None
 
-
-            if "washed" in q or ("wash" in q and "not" not in q and "didn" not in q):
-                answer = (
-                    "Under our current Returns Policy (Item condition), returned items must be unused, **unwashed**, "
-                    "and in resalable condition with original tags and packaging. Washing an item makes it ineligible for a return."
-                )
-                sources = ["01-returns-policy-current.md#Item condition"]
+            if "washed" in q and "not" not in q and "didn" not in q and cond_chunk:
+                used_chunks = [cond_chunk]
+                answer = f"Under our current Returns Policy (Item condition):\n\n• {self._clean_chunk_content(cond_chunk.content)}\n\nWashing an item makes it ineligible for a return."
+                sources = [c.citation for c in used_chunks]
                 return answer, sources, False, None
 
-
-            if "past" in q and ("deadline" in q or "late" in q) or "after 90" in q or "90 days" in q or "after deadline" in q:
+            # Past return deadline
+            if ("past" in q and ("deadline" in q or "late" in q)) or "after 90" in q or "90 days" in q or "after deadline" in q:
+                used_chunks = [win_chunk]
                 answer = (
-                    "Under our official Returns Policy, standard-plan returns must be requested within **30 calendar days of delivery**. "
-                    "The policy does not specify an exception or approval process for change-of-mind returns after that deadline. "
-                    "(If your item arrived damaged or defective, it should be reported within 7 calendar days of delivery; "
-                    "manufacturing defects after 7 days may be considered under the Warranty Policy)."
+                    f"Under our official Returns Policy:\n\n• {self._clean_chunk_content(win_chunk.content)}\n\n"
+                    "The policy does not specify an exception or approval process for change-of-mind returns after that deadline."
                 )
-                sources = ["01-returns-policy-current.md#Standard return window"]
+                sources = [c.citation for c in used_chunks]
                 return answer, sources, False, None
 
-            # Specific numeric day calculation (e.g. 25 days, 20 days)
+            # Specific day calculation (e.g., 25 days)
             day_match = re.search(r"(\d+)\s*(?:calendar\s*)?days?", q)
             if day_match and "trailplus" not in q and "45" not in day_match.group(1):
-                num_days = int(day_match.group(1))
-                if num_days <= 30:
-                    answer = (
-                        f"**Yes.** Standard-plan customers can request a return within **30 calendar days of delivery**, "
-                        f"so {num_days} days is within the eligible return window. The item must also meet condition requirements "
-                        "(unused, unwashed, with original tags and packaging). A $6.95 return shipping fee is deducted from domestic refunds."
-                    )
-                    sources = ["01-returns-policy-current.md#Standard return window"]
-                    return answer, sources, False, None
-
-        # Check for 45-day claim inquiry vs standard return policy
-        if "45" in q and ("is that true" in q or "allows" in q or "true" in q or "found" in q or "tier" in q) and "trailplus" not in q:
-            answer = (
-                "The 45-calendar-day return window applies exclusively to customers with an active **TrailPlus membership** at the time of purchase. "
-                "For standard-plan customers, the return window is **30 calendar days of delivery**."
-            )
-            sources = [
-                "01-returns-policy-current.md#Standard return window",
-                "09-trailplus-membership.md#Return window"
-            ]
-            return answer, sources, False, None
-
-        # Check for TrailPlus return window
-        trailplus_chunk = next((c for c in chunks if "09-trailplus" in c.file_name and "return" in c.heading.lower()), None)
-        if ("trailplus" in q or "membership" in q) and trailplus_chunk is not None:
-            answer = (
-                "For customers whose TrailPlus membership was active when an order was placed, the return window is "
-                "**45 calendar days from delivery** for eligible items in resalable condition. "
-                "Joining TrailPlus after placing an order does not extend that order's return window."
-            )
-            sources = [trailplus_chunk.citation]
-            return answer, sources, False, None
-
-        # Check for International shipping / Canada / Destinations
-        intl_chunks = [c for c in chunks if "06-international-shipping" in c.file_name]
-        if intl_chunks:
-            canadian_locs = ["canada", "montreal", "toronto", "vancouver", "calgary", "ottawa", "quebec", "edmonton", "winnipeg", "ontario", "alberta"]
-            is_canada_q = any(loc in q for loc in canadian_locs)
-            is_unsupported_dest = any(c in q for c in ["germany", "europe", "uk", "australia", "france", "asia"])
-            dest_chunk = next((c for c in intl_chunks if "destination" in c.heading.lower() or "supported" in c.heading.lower()), intl_chunks[0])
-            
-            # 1. Unsupported international destinations (e.g. Germany)
-            if is_unsupported_dest and not is_canada_q:
-                answer = (
-                    "Aster & Row currently ships internationally only to **Canada**. "
-                    "Shipping to Germany and other international destinations outside Canada is not available at this time."
-                )
-                sources = [dest_chunk.citation]
+                used_chunks = [c for c in [win_chunk, cond_chunk, fee_chunk] if c]
+                sections = "\n\n".join([f"• {self._clean_chunk_content(c.content)}" for c in used_chunks])
+                answer = f"**Yes.** Your return inquiry is eligible based on our official policy:\n\n{sections}"
+                sources = [c.citation for c in used_chunks]
                 return answer, sources, False, None
 
-            # 2. Specific Canada delivery / timing / duties inquiry or follow-up
+        # 4. 45-day claim inquiry vs standard return policy
+        if "45" in q and ("is that true" in q or "allows" in q or "true" in q or "found" in q or "tier" in q) and "trailplus" not in q:
+            std_chunk = next((c for c in chunks if "01-returns-policy-current" in c.file_name and ("standard" in c.heading.lower() or "window" in c.heading.lower())), None) or next((c for c in chunks if "01-returns-policy-current" in c.file_name), None)
+            tp_chunk = next((c for c in chunks if "09-trailplus" in c.file_name and "return" in c.heading.lower()), None) or next((c for c in chunks if "09-trailplus" in c.file_name), None)
+            used_chunks = [c for c in [std_chunk, tp_chunk] if c]
+            std_text = self._clean_chunk_content(std_chunk.content) if std_chunk else ""
+            tp_text = self._clean_chunk_content(tp_chunk.content) if tp_chunk else ""
+            answer = (
+                "An extended return window applies exclusively to customers with an active **TrailPlus membership** at the time of purchase:\n\n"
+                f"• **TrailPlus Policy:** {tp_text}\n\n"
+                f"• **Standard Return Policy:** {std_text}"
+            )
+            sources = [c.citation for c in used_chunks]
+            return answer, sources, False, None
+
+        # 5. TrailPlus return window
+        trailplus_chunk = next((c for c in chunks if "09-trailplus" in c.file_name and "return" in c.heading.lower()), None) or next((c for c in chunks if "09-trailplus" in c.file_name), None)
+        if ("trailplus" in q or "membership" in q) and trailplus_chunk is not None:
+            used_chunks = [trailplus_chunk]
+            answer = f"For TrailPlus members:\n\n• {self._clean_chunk_content(trailplus_chunk.content)}"
+            sources = [c.citation for c in used_chunks]
+            return answer, sources, False, None
+
+        # 6. International shipping / Canada / Destinations
+        intl_chunks = [c for c in chunks if "06-international-shipping" in c.file_name]
+        if intl_chunks:
+            dest_chunk = next((c for c in intl_chunks if "destination" in c.heading.lower() or "supported" in c.heading.lower()), intl_chunks[0])
+            est_chunk = next((c for c in intl_chunks if "estimate" in c.heading.lower() or "delivery" in c.heading.lower()), None)
+            duties_chunk = next((c for c in intl_chunks if "duties" in c.heading.lower() or "tax" in c.heading.lower()), None)
+
+            canadian_locs = ["canada", "montreal", "toronto", "vancouver", "calgary", "ottawa", "quebec", "edmonton", "winnipeg", "ontario", "alberta"]
+            is_canada_q = any(loc in q for loc in canadian_locs)
+            is_unsupported_dest = any(c in q for c in ["germany", "europe", "uk", "australia", "france", "asia", "japan", "mexico"])
             asks_timing_or_duties = any(term in q for term in [
                 "how long", "how many days", "delivery time", "transit", "timing", "time",
                 "duty", "duties", "tax", "taxes", "custom", "customs", "fee", "fees", "brokerage", "arrive", "cost"
             ])
-            
-            if is_canada_q or asks_timing_or_duties:
-                est_chunk = next((c for c in intl_chunks if "estimate" in c.heading.lower()), None)
-                duties_chunk = next((c for c in intl_chunks if "duties" in c.heading.lower() or "tax" in c.heading.lower()), None)
-                answer = (
-                    "Yes, shipping to Canada is supported. Canadian orders generally arrive within "
-                    "**5–9 business days after dispatch** (processing time before dispatch is usually 1–2 business days). "
-                    "Please note that import duties, taxes, and brokerage charges are not prepaid by Aster & Row and remain the responsibility of the recipient."
-                )
-                sources = [
-                    est_chunk.citation if est_chunk else "06-international-shipping.md#Canada delivery estimate",
-                    duties_chunk.citation if duties_chunk else "06-international-shipping.md#Duties and taxes"
-                ]
+
+            # Unsupported international destination (e.g. Germany)
+            if is_unsupported_dest and not is_canada_q:
+                used_chunks = [dest_chunk]
+                answer = f"{self._clean_chunk_content(dest_chunk.content)}\n\nShipping to international destinations outside Canada (including Germany) is not available at this time."
+                sources = [c.citation for c in used_chunks]
                 return answer, sources, False, None
 
-            # 3. General international shipping inquiry (e.g. "Do you ship internationally?")
-            # Answers using the supported destinations evidence without unnecessarily dumping timing/duties
-            answer = (
-                "Aster & Row currently ships internationally only to **Canada**. "
-                "Shipping to other international countries is not available at this time."
-            )
-            sources = [dest_chunk.citation]
+            # Specific Canada delivery / timing / duties inquiry or follow-up
+            if is_canada_q or asks_timing_or_duties:
+                used_chunks = [c for c in [est_chunk, duties_chunk] if c] or [dest_chunk]
+                details = "\n\n".join([f"• {self._clean_chunk_content(c.content)}" for c in used_chunks])
+                answer = f"Yes, shipping to Canada is supported:\n\n{details}"
+                sources = [c.citation for c in used_chunks]
+                return answer, sources, False, None
+
+            # General international shipping inquiry (Turn 1: "Do you ship internationally?")
+            used_chunks = [dest_chunk]
+            answer = self._clean_chunk_content(dest_chunk.content)
+            sources = [c.citation for c in used_chunks]
             return answer, sources, False, None
 
-
-
-        # Check for Warranty inquiry
-        warranty_chunk = next((c for c in chunks if "07-warranty" in c.file_name and "periods" in c.heading.lower()), None)
+        # 7. Warranty inquiry
+        warranty_chunk = next((c for c in chunks if "07-warranty" in c.file_name and "period" in c.heading.lower()), None) or next((c for c in chunks if "07-warranty" in c.file_name), None)
         if ("warranty" in q or "guarantee" in q or "lifetime" in q) and warranty_chunk is not None:
-            answer = (
-                "Aster & Row does not provide a lifetime warranty on any product. Our limited warranty covers manufacturing defects in materials and workmanship for:\n"
-                "• **Bags and backpacks:** 2 years from purchase date\n"
-                "• **Drinkware (including Breeze Tumbler):** 1 year from purchase date\n"
-                "• **Packing cubes and travel accessories:** 1 year from purchase date\n\n"
-                "Normal wear, accidental damage, and improper care are not covered."
-            )
-            sources = [warranty_chunk.citation]
+            scope_chunk = next((c for c in chunks if "07-warranty" in c.file_name and "scope" in c.heading.lower()), None)
+            used_chunks = [c for c in [warranty_chunk, scope_chunk] if c]
+            blocks = "\n\n".join([f"• {self._clean_chunk_content(c.content)}" for c in used_chunks])
+            answer = f"Aster & Row does not offer a lifetime warranty on any product. Our warranty coverage:\n\n{blocks}"
+            sources = [c.citation for c in used_chunks]
             return answer, sources, False, None
 
-        # Check for Returns inquiry (Standard / Change of Mind)
-        return_chunks = [c for c in chunks if "01-returns-policy-current" in c.file_name]
+        # 8. Returns inquiry (Standard / Change of Mind)
         if return_chunks:
-            answer = (
-                "Standard customers may request a return within **30 calendar days of delivery**. "
-                "Returned items must be unused, unwashed, in resalable condition, and include original tags and packaging. "
-                "A $6.95 return shipping fee is deducted from domestic refunds unless the item arrived damaged or incorrect."
-            )
-            sources = ["01-returns-policy-current.md#Standard return window"]
+            win_chunk = next((c for c in return_chunks if "standard" in c.heading.lower() or "window" in c.heading.lower()), return_chunks[0])
+            cond_chunk = next((c for c in return_chunks if "condition" in c.heading.lower()), None)
+            fee_chunk = next((c for c in return_chunks if "fee" in c.heading.lower() or "refund" in c.heading.lower()), None)
+            used_chunks = [c for c in [win_chunk, cond_chunk, fee_chunk] if c]
+            blocks = "\n\n".join([f"• {self._clean_chunk_content(c.content)}" for c in used_chunks])
+            answer = f"Under our official Returns Policy:\n\n{blocks}"
+            sources = [c.citation for c in used_chunks]
             return answer, sources, False, None
 
-        # Check for Price adjustment / gift card inquiry
-        gc_chunk = next((c for c in chunks if "10-gift-cards" in c.file_name), None)
+        # 9. Price adjustment / gift card inquiry
+        gc_chunk = next((c for c in chunks if "10-gift-cards" in c.file_name and ("price" in c.heading.lower() or "adjustment" in c.heading.lower())), None) or next((c for c in chunks if "10-gift-cards" in c.file_name), None)
         if gc_chunk is not None and ("price adjustment" in q or "adjustment" in q or "flash sale" in q or "gift card" in q):
-            answer = "Price adjustments are not available for flash sales, clearance promotions, or final-sale purchases."
-            sources = [gc_chunk.citation]
+            used_chunks = [gc_chunk]
+            answer = self._clean_chunk_content(gc_chunk.content)
+            sources = [c.citation for c in used_chunks]
             return answer, sources, False, None
 
-        # Generic Fallback: Extract directly from top authoritative chunks
+        # 10. Generic Fallback: Extract directly from top authoritative chunks
         top_chunks = chunks[:2]
-        answer = "Based on our official policy:\n\n" + "\n\n".join([f"**{c.heading}**:\n{c.content}" for c in top_chunks])
+        answer = "\n\n".join([f"**{c.heading}**:\n{self._clean_chunk_content(c.content)}" for c in top_chunks])
         sources = [c.citation for c in top_chunks]
         return answer, sources, False, None
 

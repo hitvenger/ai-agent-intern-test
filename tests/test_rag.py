@@ -118,18 +118,18 @@ def test_canada_multi_intent_shipping_retrieval(kb_retriever, policy_engine):
 
 def test_dynamic_chunk_content_propagation():
     """
-    Regression Test: Proves that policy answers are dynamically synthesized from
-    retrieved chunk content and citations rather than hardcoded templates.
+    Regression Test: Proves that standard return policy answers are dynamically synthesized from
+    retrieved chunk content and citations rather than hardcoded templates, using normal production metadata.
     """
     from app.agent import SupportAgent
     from app.models import PolicyChunk, DocumentMetadata
     
     agent = SupportAgent()
     
-    # Create custom mock chunk with distinct modified facts
-    mock_meta = DocumentMetadata(
-        document_id="RET-CUSTOM",
-        title="Custom Returns Policy",
+    # Standard production-shaped DocumentMetadata (no "Custom" or test flags)
+    meta = DocumentMetadata(
+        document_id="RET-2026-01",
+        title="Returns Policy",
         status="active",
         policy_authority="official",
         audience="customer",
@@ -141,18 +141,137 @@ def test_dynamic_chunk_content_propagation():
         heading="Standard return window",
         citation="01-returns-policy-current.md#Standard return window",
         content="Customers on the standard plan may request a return within **999 calendar days of delivery**.",
-        metadata=mock_meta
+        metadata=meta
     )
     
-    answer, sources, handoff, reason = agent._synthesize_policy_answer("How long to return?", [mock_chunk])
+    answer, sources, handoff, reason = agent._synthesize_policy_answer("How long to return an item?", [mock_chunk])
     
-    # Must contain the modified fact from chunk.content
+    # Must contain the modified fact directly from chunk.content
     assert "999 calendar days" in answer
     # Must NOT contain the old hardcoded 30 days
     assert "30 calendar days" not in answer
-    # Must dynamically cite the mock chunk's citation
+    # Must dynamically cite the chunk's citation
     assert sources == ["01-returns-policy-current.md#Standard return window"]
     assert handoff is False
+
+
+def test_dynamic_canada_shipping_content_propagation():
+    """
+    Regression Test: Proves that international shipping / Canada answers dynamically reflect
+    modified chunk content without hardcoded 5–9 day templates.
+    """
+    from app.agent import SupportAgent
+    from app.models import PolicyChunk, DocumentMetadata
+    
+    agent = SupportAgent()
+    meta = DocumentMetadata(
+        document_id="SHIP-2026-INTL",
+        title="International Shipping",
+        status="active",
+        policy_authority="official",
+        audience="customer",
+        customer_answering=True
+    )
+    canada_chunk = PolicyChunk(
+        chunk_id="06-international-shipping.md_1",
+        file_name="06-international-shipping.md",
+        heading="Canada delivery estimate",
+        citation="06-international-shipping.md#Canada delivery estimate",
+        content="Canadian orders generally arrive within **14–21 business days after dispatch**.",
+        metadata=meta
+    )
+    duties_chunk = PolicyChunk(
+        chunk_id="06-international-shipping.md_2",
+        file_name="06-international-shipping.md",
+        heading="Duties and taxes",
+        citation="06-international-shipping.md#Duties and taxes",
+        content="Customs duties and import fees are not prepaid by Aster & Row.",
+        metadata=meta
+    )
+    
+    answer, sources, handoff, reason = agent._synthesize_policy_answer(
+        "What about Canada, how long does it take?",
+        [canada_chunk, duties_chunk]
+    )
+    
+    # Must contain the modified 14–21 business days
+    assert "14–21 business days" in answer
+    # Must NOT contain the default 5–9 business days
+    assert "5–9 business days" not in answer
+    # Sources must strictly match chunk citations
+    assert sources == [
+        "06-international-shipping.md#Canada delivery estimate",
+        "06-international-shipping.md#Duties and taxes"
+    ]
+
+
+def test_dynamic_warranty_content_propagation():
+    """
+    Regression Test: Proves that warranty policy answers dynamically reflect
+    modified chunk content without hardcoded 2-year / 1-year templates.
+    """
+    from app.agent import SupportAgent
+    from app.models import PolicyChunk, DocumentMetadata
+    
+    agent = SupportAgent()
+    meta = DocumentMetadata(
+        document_id="WAR-2026-01",
+        title="Limited Product Warranty",
+        status="active",
+        policy_authority="official",
+        audience="customer",
+        customer_answering=True
+    )
+    warranty_chunk = PolicyChunk(
+        chunk_id="07-warranty.md_0",
+        file_name="07-warranty.md",
+        heading="Warranty periods",
+        citation="07-warranty.md#Warranty periods",
+        content="- Aster & Row bags and backpacks: **10 years from the purchase date**.\n- Drinkware: **5 years from purchase**.",
+        metadata=meta
+    )
+    
+    answer, sources, handoff, reason = agent._synthesize_policy_answer("What is the warranty period?", [warranty_chunk])
+    
+    assert "10 years" in answer
+    assert "5 years" in answer
+    assert "2 years" not in answer
+    assert sources == ["07-warranty.md#Warranty periods"]
+
+
+def test_dynamic_trailplus_content_propagation():
+    """
+    Regression Test: Proves that TrailPlus membership return answers dynamically reflect
+    modified chunk content without hardcoded 45-day templates.
+    """
+    from app.agent import SupportAgent
+    from app.models import PolicyChunk, DocumentMetadata
+    
+    agent = SupportAgent()
+    meta = DocumentMetadata(
+        document_id="MEM-2026-01",
+        title="TrailPlus Membership Benefits",
+        status="active",
+        policy_authority="official",
+        audience="customer",
+        customer_answering=True
+    )
+    tp_chunk = PolicyChunk(
+        chunk_id="09-trailplus-membership.md_0",
+        file_name="09-trailplus-membership.md",
+        heading="Return window",
+        citation="09-trailplus-membership.md#Return window",
+        content="A customer with an active TrailPlus membership receives a **120-calendar-day return window from delivery**.",
+        metadata=meta
+    )
+    
+    answer, sources, handoff, reason = agent._synthesize_policy_answer("What is the return window for TrailPlus members?", [tp_chunk])
+    
+    assert "120 calendar days" in answer or "120-calendar-day" in answer
+    assert "45 calendar days" not in answer
+    assert "45-calendar-day" not in answer
+    assert sources == ["09-trailplus-membership.md#Return window"]
+
 
 
 def test_historical_legacy_policy_retrieval_and_synthesis():
@@ -172,10 +291,11 @@ def test_historical_legacy_policy_retrieval_and_synthesis():
     assert "60 calendar days" not in resp.answer
     # Must explain that it was superseded by the current 30-day policy
     assert "superseded" in resp.answer.lower()
-    assert "30-calendar-day" in resp.answer or "30 calendar days" in resp.answer
+    assert "30 calendar days" in resp.answer or "30-calendar-day" in resp.answer
     # Must cite the legacy return window source
     assert "02-returns-policy-legacy.md#Return window" in resp.sources
     assert resp.handoff_recommended is False
+
 
 
 

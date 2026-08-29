@@ -83,7 +83,7 @@ Run the deterministic evaluation harness covering all 15 supplied visible cases 
 # Run the complete Evaluation Harness with Rich summary tables
 python evaluation/run_eval.py
 
-# Run all automated unit, integration, and adversarial tests (61 tests)
+# Run all automated unit, integration, and adversarial tests (64 tests)
 python -m pytest tests/ -v
 
 
@@ -268,7 +268,7 @@ The demo demonstrates:
 2. **Air-Gapped Order Status:** PII stripped and stale tracking/ETA neutralized on cancelled/returned orders.
 3. **Multi-Turn Context Retention:** Carrying context across conversation turns (e.g. Canadian shipping follow-ups, order lookup status).
 4. **Safe Abstention & Active Conflict Handling:** Explaining discrepancies with safe interim guidance and human handoff on the Breeze Tumbler care conflict.
-5. **Deterministic Evaluation:** Full test coverage across all 22 evaluation cases (15 visible + 7 custom) and 61 automated Pytest test cases.
+5. **Deterministic Evaluation:** Full test coverage across all 22 evaluation cases (15 visible + 7 custom) and 64 automated Pytest test cases.
 
 
 
